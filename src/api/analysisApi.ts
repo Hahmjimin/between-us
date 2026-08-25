@@ -61,7 +61,40 @@ export interface DeepAnalysisRequest {
   freeResult: AnalysisResponse
 }
 
+export interface ApiErrorResponse {
+  success?: boolean
+  code?: string
+  message?: string
+}
+
+export class AnalysisApiError extends Error {
+  code: string
+  status: number
+
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+  ) {
+    super(message)
+
+    this.name = 'AnalysisApiError'
+    this.code = code
+    this.status = status
+  }
+}
+
 const API_BASE_URL = 'http://localhost:8080'
+
+async function parseErrorResponse(
+  response: Response,
+): Promise<ApiErrorResponse | null> {
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
 
 export async function requestAnalysis(
   request: AnalysisRequest,
@@ -78,8 +111,14 @@ export async function requestAnalysis(
   )
 
   if (!response.ok) {
-    throw new Error(
-      '분석 요청에 실패했습니다.',
+    const errorBody =
+      await parseErrorResponse(response)
+
+    throw new AnalysisApiError(
+      errorBody?.code ?? 'ANALYSIS_ERROR',
+      errorBody?.message ??
+        '분석 중 문제가 발생했어요. 잠시 후 다시 시도해주세요.',
+      response.status,
     )
   }
 
@@ -101,8 +140,14 @@ export async function requestDeepAnalysis(
   )
 
   if (!response.ok) {
-    throw new Error(
-      '심층 분석 요청에 실패했습니다.',
+    const errorBody =
+      await parseErrorResponse(response)
+
+    throw new AnalysisApiError(
+      errorBody?.code ?? 'DEEP_ANALYSIS_ERROR',
+      errorBody?.message ??
+        '심층 분석 중 문제가 발생했어요. 잠시 후 다시 시도해주세요.',
+      response.status,
     )
   }
 

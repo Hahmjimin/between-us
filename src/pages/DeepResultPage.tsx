@@ -5,6 +5,8 @@ import {
   DeepAnalysisResponse,
 } from '../api/analysisApi'
 
+import '../styles/deep-result.css'
+
 function DeepResultPage() {
   const navigate = useNavigate()
 

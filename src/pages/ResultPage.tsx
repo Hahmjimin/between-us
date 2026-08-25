@@ -7,6 +7,8 @@ import {
   requestDeepAnalysis,
 } from '../api/analysisApi'
 
+import '../styles/result.css'
+
 interface SignalItem {
   key: string
   label: string
