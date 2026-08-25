@@ -23,7 +23,8 @@ function FollowUpPage() {
   const navigate = useNavigate()
 
   const [current, setCurrent] = useState(0)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [answers, setAnswers] =
+    useState<Record<string, string>>({})
 
   const question = questions[current]
 
@@ -57,7 +58,11 @@ function FollowUpPage() {
           <div>
             <div
               style={{
-                width: `${((current + 1) / questions.length) * 100}%`,
+                width: `${
+                  ((current + 1) /
+                    questions.length) *
+                  100
+                }%`,
               }}
             />
           </div>
@@ -71,19 +76,31 @@ function FollowUpPage() {
           조금만 더 알려주세요
         </span>
 
-        <h1 className="followup-title">
+        <h1
+          className="followup-title"
+          style={{
+            fontSize:
+              current === 2
+                ? 'clamp(24px, 3.2vw, 32px)'
+                : 'clamp(26px, 3.6vw, 36px)',
+            lineHeight: 1.4,
+          }}
+        >
           {question.question}
         </h1>
 
         <p className="followup-description">
-          앞서 들려준 이야기를 더 정확하게 이해하기 위한 질문이에요.
+          앞서 들려준 이야기를 더 정확하게 이해하기
+          위한 질문이에요.
         </p>
 
         <div className="followup-options">
           {question.options.map((option) => (
             <button
               key={option}
-              onClick={() => handleSelect(option)}
+              onClick={() =>
+                handleSelect(option)
+              }
             >
               <span>{option}</span>
               <span>›</span>
