@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  AnalysisRequest,
+  loadTossPayments,
+  ANONYMOUS,
+} from '@tosspayments/tosspayments-sdk'
+
+import {
   AnalysisResponse,
-  DeepAnalysisResponse,
-  requestDeepAnalysis,
 } from '../api/analysisApi'
 
 import '../styles/result.css'
@@ -17,13 +19,15 @@ interface SignalItem {
   negative?: boolean
 }
 
+const DEEP_REPORT_PRICE = 2900
+
 function ResultPage() {
   const navigate = useNavigate()
 
-  const [deepLoading, setDeepLoading] =
+  const [paymentLoading, setPaymentLoading] =
     useState(false)
 
-  const [deepError, setDeepError] =
+  const [paymentError, setPaymentError] =
     useState('')
 
   const result =
@@ -146,69 +150,181 @@ function ResultPage() {
     },
   ]
 
+  const createOrderId = () => {
+    return `BETWEENUS_${crypto
+      .randomUUID()
+      .replaceAll('-', '')
+      .slice(0, 24)}`
+  }
+
   const handleDeepReport =
     async () => {
-      if (deepLoading) {
+      if (paymentLoading) {
         return
       }
 
       try {
-        setDeepLoading(true)
-        setDeepError('')
+        setPaymentLoading(true)
+        setPaymentError('')
 
-        sessionStorage.removeItem(
-          'deepAnalysisResult',
-        )
+        const clientKey =
+          import.meta.env
+            .VITE_TOSS_CLIENT_KEY
 
+        if (!clientKey) {
+          throw new Error(
+            'VITE_TOSS_CLIENT_KEY가 설정되지 않았습니다.',
+          )
+        }
+
+        /*
+         * 결제 성공 이후에도
+         * 기존 분석 데이터를 이용할 수 있도록
+         * 현재 요청 정보를 sessionStorage에 저장한다.
+         */
         sessionStorage.setItem(
           'analysisResult',
           JSON.stringify(result),
         )
 
-        const analysisRequest: AnalysisRequest = {
-          relationshipType,
+        sessionStorage.setItem(
+          'relationshipStory',
           story,
-          followUpAnswers,
-        }
-
-        const deepResult: DeepAnalysisResponse =
-          await requestDeepAnalysis({
-            analysisRequest,
-            freeResult: result,
-          })
-
-        if (!deepResult.valid) {
-          setDeepError(
-            '심층 분석에 필요한 정보가 부족해요.',
-          )
-
-          return
-        }
+        )
 
         sessionStorage.setItem(
-          'deepAnalysisResult',
+          'relationshipType',
+          relationshipType,
+        )
+
+        sessionStorage.setItem(
+          'followUpAnswers',
           JSON.stringify(
-            deepResult,
+            followUpAnswers,
           ),
         )
 
-        sessionStorage.setItem(
-          'analysisResult',
-          JSON.stringify(result),
+        /*
+         * 토스페이먼츠 SDK v2 초기화
+         */
+        const tossPayments =
+          await loadTossPayments(
+            clientKey,
+          )
+
+        /*
+         * 현재 로그인 없는 비회원 서비스이므로
+         * ANONYMOUS 사용
+         */
+        const widgets =
+          tossPayments.widgets({
+            customerKey:
+              ANONYMOUS,
+          })
+
+        /*
+         * 결제창 렌더링 전에
+         * 금액을 먼저 설정해야 한다.
+         */
+        await widgets.setAmount({
+          currency: 'KRW',
+          value:
+            DEEP_REPORT_PRICE,
+        })
+
+        /*
+         * 결제창형 UI 렌더링
+         *
+         * Result 화면 위에
+         * 토스 결제수단 선택창이
+         * 오버레이 형태로 열린다.
+         */
+        const paymentWindow =
+          await widgets.renderPaymentWindow()
+
+        /*
+         * 사용자가 결제창을 닫으면
+         * 다시 버튼을 누를 수 있게 한다.
+         */
+        paymentWindow.on(
+          'cancel',
+          () => {
+            setPaymentLoading(false)
+          },
         )
 
-        navigate('/deep-result')
+        /*
+         * 결제창에서 결제수단을 선택하고
+         * 결제를 진행하면 발생한다.
+         */
+        paymentWindow.on(
+          'paymentRequest',
+          async () => {
+            try {
+              const orderId =
+                createOrderId()
+
+              /*
+               * 다음 단계의 결제 승인에서
+               * 사용할 주문 정보를 저장한다.
+               *
+               * 현재는 테스트 단계이며,
+               * 최종 구현에서는 orderId와 amount를
+               * Spring Boot 서버에서 관리한다.
+               */
+              sessionStorage.setItem(
+                'paymentOrderId',
+                orderId,
+              )
+
+              sessionStorage.setItem(
+                'paymentAmount',
+                String(
+                  DEEP_REPORT_PRICE,
+                ),
+              )
+
+              await widgets.requestPayment({
+                orderId,
+
+                orderName:
+                  'BETWEEN US 개인화 심층 분석',
+
+                successUrl:
+                  `${window.location.origin}/payment/success`,
+
+                failUrl:
+                  `${window.location.origin}/payment/fail`,
+              })
+            } catch (error) {
+              console.error(
+                '토스 결제 요청 실패:',
+                error,
+              )
+
+              setPaymentError(
+                '결제를 시작하지 못했어요. 다시 시도해주세요.',
+              )
+
+              setPaymentLoading(
+                false,
+              )
+
+              paymentWindow.destroy()
+            }
+          },
+        )
       } catch (error) {
         console.error(
-          'Deep Report 생성 실패:',
+          '토스 결제창 실행 실패:',
           error,
         )
 
-        setDeepError(
-          '지금 분석 요청이 많아요. 잠시 후 다시 시도해주세요.',
+        setPaymentError(
+          '결제창을 불러오지 못했어요. 잠시 후 다시 시도해주세요.',
         )
-      } finally {
-        setDeepLoading(false)
+
+        setPaymentLoading(false)
       }
     }
 
@@ -235,7 +351,9 @@ function ResultPage() {
 
         <div className="signal-summary">
           <div>
-            <span>관심 신호</span>
+            <span>
+              관심 신호
+            </span>
 
             <strong>
               {result.interestLevel}
@@ -308,7 +426,9 @@ function ResultPage() {
 
                     <b>
                       {signal.value}
-                      <small>/5</small>
+                      <small>
+                        /5
+                      </small>
                     </b>
                   </div>
 
@@ -439,31 +559,32 @@ function ResultPage() {
             </div>
           </div>
 
-          {deepError && (
+          {paymentError && (
             <p className="deep-error">
-              {deepError}
+              {paymentError}
             </p>
           )}
 
           <button
             className={`premium-button ${
-              deepLoading
+              paymentLoading
                 ? 'premium-button-loading'
                 : ''
             }`}
             onClick={
               handleDeepReport
             }
-            disabled={deepLoading}
+            disabled={
+              paymentLoading
+            }
           >
-            {deepLoading ? (
+            {paymentLoading ? (
               <>
                 <span className="premium-loading-copy">
-                  심층 분석 중이에요
+                  결제창을 준비하고 있어요
 
                   <small>
-                    두 사람의 행동 패턴을
-                    더 깊게 보고 있어요
+                    잠시만 기다려주세요
                   </small>
                 </span>
 
